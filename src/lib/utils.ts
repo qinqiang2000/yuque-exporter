@@ -37,12 +37,13 @@ export async function writeFile(filePath: string, content) {
   await fs.writeFile(filePath, content, 'utf-8');
 }
 
-export async function getRedirectLink(url: string, host: string) {
+export async function getRedirectLink(url: string, host: string): Promise<string> {
   const { headers } = await request(url, { method: 'HEAD' });
   const redirectLink = headers.location;
   if (!redirectLink) return url;
-  if (redirectLink[0] === '/') return `${host}${redirectLink}`;
-  return redirectLink;
+  const link = Array.isArray(redirectLink) ? redirectLink[0] : redirectLink;
+  if (link[0] === '/') return `${host}${link}`;
+  return link;
 }
 
 export async function download(url: string, filePath: string, opts: any = {}) {

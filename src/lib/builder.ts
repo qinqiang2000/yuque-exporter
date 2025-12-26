@@ -7,7 +7,6 @@ import { logger, mkdir, readJSON, writeFile } from './utils.js';
 import { buildDoc } from './doc.js';
 import { buildTree } from './tree.js';
 import { config } from '../config.js';
-const { outputDir, metaDir } = config;
 
 const taskQueue = new PQueue({ concurrency: 10 });
 
@@ -17,7 +16,7 @@ export async function build() {
 
   const repos = await listRepos();
   if (repos.length === 0) {
-    logger.warn(`No repos found at ${metaDir}`);
+    logger.warn(`No repos found at ${config.metaDir}`);
     return;
   }
 
@@ -27,7 +26,7 @@ export async function build() {
   // travel tree to build docs
   const tasks: (() => Promise<void>)[] = [];
   for (const { node } of tree) {
-    const fullPath = path.join(outputDir, node.filePath);
+    const fullPath = path.join(config.outputDir, node.filePath);
     logger.success(fullPath);
 
     switch (node.type) {
@@ -48,7 +47,7 @@ export async function build() {
         tasks.push(async () => {
           const doc = await buildDoc(node, tree.docs);
           if (doc !== null) {
-            const fullPath = path.join(outputDir, `${doc.filePath}.md`);
+            const fullPath = path.join(config.outputDir, `${doc.filePath}.md`);
             logger.success(`Building doc: ${fullPath}`);
             await writeFile(fullPath, doc.content);
           }
@@ -67,9 +66,9 @@ export async function build() {
 
 async function listRepos(): Promise<Repository[]> {
   const repos = [];
-  const reposPath = await fg('**/repo.json', { cwd: metaDir, deep: 3 });
+  const reposPath = await fg('**/repo.json', { cwd: config.metaDir, deep: 3 });
   for (const repoPath of reposPath) {
-    const repoInfo: Repository = await readJSON(path.join(metaDir, repoPath));
+    const repoInfo: Repository = await readJSON(path.join(config.metaDir, repoPath));
     if (repoInfo.type === 'Book') {
       repos.push(repoInfo);
     }

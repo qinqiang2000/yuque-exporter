@@ -6,13 +6,22 @@ import fg from 'fast-glob';
 import { SDK } from './sdk.js';
 import { logger, writeFile, rm, readJSON } from './utils.js';
 import { config } from '../config.js';
-const { host, token, userAgent, clean, metaDir } = config;
 
-const sdk = new SDK({ token, host, userAgent });
 const taskQueue = new PQueue({ concurrency: 10 });
+
+// Lazy initialize SDK to avoid requiring token during module import
+let sdk: SDK;
+function getSDK() {
+  if (!sdk) {
+    const { host, token, userAgent } = config;
+    sdk = new SDK({ token, host, userAgent });
+  }
+  return sdk;
+}
 
 export async function crawl(inputs?: string[]) {
   logger.info('Start crawling...');
+  const { clean, metaDir } = config;
   if (clean) await rm(metaDir);
 
   // if inputs is empty, crawl all repos of the user which associated with the token
@@ -29,12 +38,12 @@ export async function crawl(inputs?: string[]) {
       // fetch a repo with namespace
       repoList.add(`${user}/${repo}`);
     } else {
-      const userInfo = await sdk.getUser(user);
+      const userInfo = await getSDK().getUser(user);
       const login = userInfo.login;
       await saveToStorage(`${login}/user.json`, userInfo);
 
       // fetch all repos with user name
-      const repos = await sdk.getRepos(login);
+      const repos = await getSDK().getRepos(login);
       await saveToStorage(`${login}/repos.json`, repos);
       for (const repo of repos) {
         if (repo.type === 'Book') {
@@ -53,22 +62,28 @@ export async function crawl(inputs?: string[]) {
 
 export async function crawlRepo(namespace: string) {
   // crawl repo detail/docs/toc
+  const { host, metaDir } = config;
   logger.success(`Crawling repo detail: ${host}/${namespace}`);
-  const repo = await sdk.getRepoDetail(namespace);
+  const repo = await getSDK().getRepoDetail(namespace);
   const toc = yaml.parse(repo.toc_yml);
-  const docList = await sdk.getDocs(namespace);
+  const docList = await getSDK().getDocs(namespace);
   const docsPublishedAtKey = 'docs-published-at';
+
+  // Read the old published_at map BEFORE overwriting it
+  const docsPublishedAtPath = await fg(`**/${namespace}/docs-published-at.json`, { cwd: metaDir, deep: 3 });
+  let docsPublishedAtMap: Record<number, string> = {};
+  if (docsPublishedAtPath.length > 0) {
+    docsPublishedAtMap = await readJSON(path.join(metaDir, docsPublishedAtPath[0]));
+  }
 
   await saveToStorage(`${namespace}/repo.json`, repo);
   await saveToStorage(`${namespace}/toc.json`, toc);
   await saveToStorage(`${namespace}/docs.json`, docList);
   await saveToStorage(`${namespace}/docs-published-at.json`, Object.fromEntries(
-    [ ...docList.entries() ].map(([ index, doc ]) => [ doc.id, doc.published_at ]),
+    [ ...docList.entries() ].map(([ _index, doc ]) => [ doc.id, doc.published_at ]),
   ));
 
   // crawl repo docs
-  const docsPublishedAtPath = await fg('**/docs-published-at.json', { cwd: metaDir, deep: 3 });
-  const docsPublishedAtMap: Record<number, string> = await readJSON(path.join(metaDir, docsPublishedAtPath[0]));
   // throw new Error(JSON.stringify(docsPublishedAtMap));
   const docChangedList = docList
     .filter(doc => typeof docsPublishedAtMap[doc.id] === 'undefined' || docsPublishedAtMap[doc.id] !== doc.published_at);
@@ -77,7 +92,7 @@ export async function crawlRepo(namespace: string) {
     docs = await taskQueue.addAll(docChangedList.map(doc => {
       return async () => {
         logger.success(` - [${doc.title}](${host}/${namespace}/${doc.slug})`);
-        const docDetail = await sdk.getDocDetail(namespace, doc.slug);
+        const docDetail = await getSDK().getDocDetail(namespace, doc.slug);
         await saveToStorage(`${namespace}/docs/${doc.slug}.json`, docDetail);
       };
     }));
@@ -91,5 +106,5 @@ export async function crawlRepo(namespace: string) {
 }
 
 async function saveToStorage(filePath: string, content) {
-  await writeFile(path.join(metaDir, filePath), content);
+  await writeFile(path.join(config.metaDir, filePath), content);
 }

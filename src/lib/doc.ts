@@ -7,12 +7,73 @@ import yaml from 'yaml';
 import fg from 'fast-glob';
 
 import { TreeNode } from './types.js';
-import { readJSON, download, getRedirectLink } from './utils.js';
+import { readJSON, download, getRedirectLink, logger, exists } from './utils.js';
 import { config } from '../config.js';
 
-const { host, metaDir, outputDir, userAgent } = config;
-const docsPublishedAtPath = await fg('**/docs-published-at.json', { cwd: metaDir, deep: 3 });
-const docsPublishedAtMap = await readJSON(path.join(metaDir, docsPublishedAtPath[0]));
+interface LakesheetData {
+  version: string;
+  data: {
+    id: string;
+    name: string;
+    rowCount: number;
+    colCount: number;
+    table: string[][];
+  }[];
+}
+
+function convertLakesheetToMarkdown(bodySheet: string): string {
+  try {
+    const sheetData: LakesheetData = JSON.parse(bodySheet);
+
+    if (!sheetData.data || sheetData.data.length === 0) {
+      return '';
+    }
+
+    // Convert each sheet to markdown
+    const markdownSections = sheetData.data.map(sheet => {
+      if (!sheet.table || sheet.table.length === 0) {
+        return '';
+      }
+
+      const lines: string[] = [];
+
+      // Add sheet name if there are multiple sheets
+      if (sheetData.data.length > 1) {
+        lines.push(`## ${sheet.name}\n`);
+      }
+
+      // Generate markdown table
+      sheet.table.forEach((row, rowIndex) => {
+        // Escape pipe characters in cells and handle empty cells
+        const cells = row.map(cell => (cell || '').replace(/\|/g, '\\|'));
+        lines.push(`| ${cells.join(' | ')} |`);
+
+        // Add separator after first row (header row)
+        if (rowIndex === 0) {
+          const separator = row.map(() => '---');
+          lines.push(`| ${separator.join(' | ')} |`);
+        }
+      });
+
+      return lines.join('\n');
+    });
+
+    return markdownSections.filter(s => s).join('\n\n');
+  } catch (error) {
+    logger.warn(`[WARN] Failed to parse lakesheet data: ${error.message}`);
+    return '';
+  }
+}
+
+// Lazy load the published dates map to avoid errors when metadata doesn't exist yet
+let docsPublishedAtMap: Record<number, string> = {};
+async function loadDocsPublishedAtMap() {
+  if (Object.keys(docsPublishedAtMap).length > 0) return;
+  const docsPublishedAtPath = await fg('**/docs-published-at.json', { cwd: config.metaDir, deep: 3 });
+  if (docsPublishedAtPath.length > 0) {
+    docsPublishedAtMap = await readJSON(path.join(config.metaDir, docsPublishedAtPath[0]));
+  }
+}
 
 interface Options {
   doc: TreeNode;
@@ -20,10 +81,44 @@ interface Options {
 }
 
 export async function buildDoc(doc: TreeNode, mapping: Record<string, TreeNode>) {
-  const docDetail = await readJSON(path.join(metaDir, doc.namespace, 'docs', `${doc.url}.json`));
-  if (typeof docsPublishedAtMap[docDetail.id] !== 'undefined' && docsPublishedAtMap[docDetail.id] === docDetail.published_at) {
-    return null;
+  await loadDocsPublishedAtMap();
+  const docPath = path.join(config.metaDir, doc.namespace, 'docs', `${doc.url}.json`);
+
+  // Handle missing doc files gracefully (e.g., deleted docs still in TOC, or no access)
+  let docDetail;
+  try {
+    docDetail = await readJSON(docPath);
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      logger.warn(`[WARN] Doc file not found: ${docPath}, skipping...`);
+      return null;
+    }
+    throw err;
   }
+
+  // Only skip if published_at unchanged AND the markdown file already exists
+  if (typeof docsPublishedAtMap[docDetail.id] !== 'undefined' && docsPublishedAtMap[docDetail.id] === docDetail.published_at) {
+    const mdPath = path.join(config.outputDir, `${doc.filePath}.md`);
+    if (await exists(mdPath)) {
+      return null;
+    }
+  }
+  // Handle different document formats
+  let bodyContent = '';
+
+  // Check if it's a lakesheet (table) document
+  if (docDetail.format === 'lakesheet' && docDetail.body_sheet) {
+    bodyContent = convertLakesheetToMarkdown(docDetail.body_sheet);
+  } else {
+    // Handle regular documents
+    bodyContent = docDetail.body || docDetail.body_lake || '';
+
+    // Warn about empty documents
+    if (!bodyContent) {
+      logger.warn(`[WARN] Document "${doc.title}" (${doc.url}) has no content. Format: ${docDetail.format}`);
+    }
+  }
+
   const content = await remark()
     .data('settings', { bullet: '-', listItemIndent: 'one' })
     .use([
@@ -31,7 +126,7 @@ export async function buildDoc(doc: TreeNode, mapping: Record<string, TreeNode>)
       [ relativeLink, { doc, mapping }],
       [ downloadAsset, { doc, mapping }],
     ])
-    .process(docDetail.body);
+    .process(bodyContent);
 
   doc.content = frontmatter(doc) + content.toString();
 
@@ -44,7 +139,7 @@ export async function buildDoc(doc: TreeNode, mapping: Record<string, TreeNode>)
 function frontmatter(doc) {
   const frontMatter = yaml.stringify({
     title: doc.title,
-    url: `${host}/${doc.namespace}/${doc.url}`,
+    url: `${config.host}/${doc.namespace}/${doc.url}`,
     // slug: doc.slug,
     // public: doc.public,
     // status: doc.status,
@@ -72,8 +167,8 @@ function relativeLink({ doc, mapping }: Options) {
       if (!isYuqueDocLink(node.url)) continue;
 
       // 语雀分享链接功能已下线，替换为 302 后的地址
-      if (node.url.startsWith(`${host}/docs/share/`)) {
-        node.url = await getRedirectLink(node.url, host);
+      if (node.url.startsWith(`${config.host}/docs/share/`)) {
+        node.url = await getRedirectLink(node.url, config.host);
       }
 
       // 语雀链接有多种显示方式，其中一种会插入该参数，会导致点击后的页面缺少头部导航
@@ -92,8 +187,8 @@ function relativeLink({ doc, mapping }: Options) {
 
 function isYuqueDocLink(url?: string) {
   if (!url) return false;
-  if (!url.startsWith(host)) return false;
-  if (url.startsWith(host + '/attachments/')) return false;
+  if (!url.startsWith(config.host)) return false;
+  if (url.startsWith(config.host + '/attachments/')) return false;
   return true;
 }
 
@@ -108,7 +203,7 @@ function downloadAsset(opts: Options) {
     for (const node of assetNodes) {
       const assetName = `${opts.doc.url}/${new URL(node.url).pathname.split('/').pop()}`;
       const filePath = path.join(assetsDir, assetName);
-      await download(node.url, path.join(outputDir, filePath), { headers: { 'User-Agent': userAgent } });
+      await download(node.url, path.join(config.outputDir, filePath), { headers: { 'User-Agent': config.userAgent } });
       node.url = path.relative(path.dirname(docFilePath), filePath);
     }
   };

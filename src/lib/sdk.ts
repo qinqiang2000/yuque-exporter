@@ -76,6 +76,7 @@ export interface DocDetail extends Doc {
   body_html: string;
   body_lake: string;
   body_draft_lake: string;
+  body_sheet: string; // JSON string for lakesheet format
 }
 
 export interface SDKOptions {
@@ -88,6 +89,9 @@ export interface ResponseData<T> {
   data?: T;
   message?: string;
   code?: number;
+  meta?: {
+    total?: number;
+  };
 }
 
 export class SDK {
@@ -116,7 +120,25 @@ export class SDK {
   }
 
   async getDocs(namespace: string) {
-    return await this.requestAPI<Doc[]>(`repos/${namespace}/docs`);
+    const allDocs: Doc[] = [];
+    let offset = 0;
+    const limit = 100; // Yuque API limit per page
+
+    while (true) {
+      const response = await this.request<Doc[]>(`repos/${namespace}/docs?offset=${offset}&limit=${limit}`);
+      const docs = response.data || [];
+      allDocs.push(...docs);
+
+      // Check if we've fetched all documents
+      const total = response.meta?.total || docs.length;
+      if (allDocs.length >= total || docs.length === 0) {
+        break;
+      }
+
+      offset += limit;
+    }
+
+    return allDocs;
   }
 
   async getDocDetail(namespace: string, slug: string) {
