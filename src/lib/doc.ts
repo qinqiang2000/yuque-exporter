@@ -133,6 +133,17 @@ export async function buildDoc(doc: TreeNode, mapping: Record<string, TreeNode>)
   // FIXME: remark will transform `*` to `\*`
   doc.content = doc.content.replaceAll('\\*', '*');
 
+  // Skip empty documents that have children (directory-like docs)
+  // These docs serve as folders in Yuque and their .md files are not meaningful
+  if (doc.children && doc.children.length > 0) {
+    const contentWithoutFrontmatter = doc.content.replace(/^---[\s\S]*?---\s*/m, '').trim();
+    // Consider a doc "empty" if it has less than 50 characters of actual content
+    if (!contentWithoutFrontmatter || contentWithoutFrontmatter.length < 50) {
+      logger.info(`[INFO] Skipping empty directory-document: ${doc.title} (has ${doc.children.length} children)`);
+      return null;
+    }
+  }
+
   return doc;
 }
 

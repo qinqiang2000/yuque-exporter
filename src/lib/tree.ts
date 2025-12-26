@@ -113,22 +113,40 @@ export async function buildRepoTree(repo: Repository) {
     dataField: null,
   }) as TreeNode[];
 
-  // collect draft items
+  // collect draft items (docs not in toc)
   const slugSet = new Set(tocList.map(item => item.url));
-  const draftNodes: TreeNode[] = docs
-    .filter(doc => !slugSet.has(doc.slug))
-    .map(doc => {
+  const draftDocs = docs.filter(doc => !slugSet.has(doc.slug));
+
+  // If there are draft docs, create a special folder for them
+  if (draftDocs.length > 0) {
+    const uncategorizedFolderUuid = `${repoNode.uuid}_uncategorized`;
+    const uncategorizedFolder: TreeNode = {
+      type: 'TITLE',
+      title: '_未分类文档',
+      uuid: uncategorizedFolderUuid,
+      parent_uuid: repoNode.uuid,
+      url: '',
+      namespace: repo.namespace,
+      children: [],
+    };
+
+    const draftNodes: TreeNode[] = draftDocs.map(doc => {
       const node: TreeNode = {
         type: 'DRAFT_DOC',
         title: doc.title,
         uuid: String(doc.id),
-        parent_uuid: repoNode.uuid,
+        parent_uuid: uncategorizedFolderUuid,
         url: doc.slug,
         namespace: repo.namespace,
       };
       return node;
     });
 
-  repoNode.children = [ ...childNodes, ...draftNodes ];
+    uncategorizedFolder.children = draftNodes;
+    repoNode.children = [ ...childNodes, uncategorizedFolder ];
+  } else {
+    repoNode.children = childNodes;
+  }
+
   return repoNode;
 }
