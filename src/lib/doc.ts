@@ -133,6 +133,9 @@ export async function buildDoc(doc: TreeNode, mapping: Record<string, TreeNode>)
   // FIXME: remark will transform `*` to `\*`
   doc.content = doc.content.replaceAll('\\*', '*');
 
+  // Remove <font> tags (including escaped \<font>) but keep the text content
+  doc.content = doc.content.replace(/\\?<font[^>]*>([\s\S]*?)<\/font>/gi, '$1');
+
   // Skip empty documents that have children (directory-like docs)
   // These docs serve as folders in Yuque and their .md files are not meaningful
   if (doc.children && doc.children.length > 0) {
