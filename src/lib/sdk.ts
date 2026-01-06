@@ -1,5 +1,6 @@
 import assert from 'assert/strict';
 import { request, Dispatcher } from 'undici';
+import { YuqueAPIError } from './errors.js';
 
 export interface User {
   id: number;
@@ -160,7 +161,34 @@ export class SDK {
     const json: ResponseData<T> = await body.json();
 
     if (statusCode !== 200) {
-      throw new Error(`request ${this.host}/api/v2/${api} failed: ${JSON.stringify(json)}`);
+      const apiMessage = json?.message || 'Unknown error';
+      switch (statusCode) {
+        case 401:
+          throw new YuqueAPIError(401,
+            `Authentication failed: ${apiMessage}`,
+            'Please check your YUQUE_TOKEN is valid and not expired.\n' +
+            'Get a new token at: https://www.yuque.com/settings/tokens'
+          );
+        case 403:
+          throw new YuqueAPIError(403,
+            `Access denied: ${apiMessage}`,
+            'You may not have permission to access this repository.'
+          );
+        case 404:
+          throw new YuqueAPIError(404,
+            `Resource not found: ${api}`,
+            'Please check the repository path is correct (format: user/repo).'
+          );
+        case 429:
+          throw new YuqueAPIError(429,
+            'Rate limit exceeded',
+            'Please wait a while before retrying. API limit: 5000 requests/hour.'
+          );
+        default:
+          throw new YuqueAPIError(statusCode,
+            `API request failed (${statusCode}): ${apiMessage}`
+          );
+      }
     }
     return json;
   }

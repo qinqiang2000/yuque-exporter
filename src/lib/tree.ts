@@ -7,7 +7,6 @@ import { arrayToTree } from 'performant-array-to-tree';
 import type { Doc, Repository, TocInfo, TreeNode } from './types';
 import { readJSON } from './utils.js';
 import { config } from '../config.js';
-const { metaDir } = config;
 
 interface TravelResult {
   node: TreeNode;
@@ -88,8 +87,8 @@ export async function buildRepoTree(repo: Repository) {
     children: [],
   };
 
-  const docs: Doc[] = await readJSON(path.join(metaDir, repo.namespace, 'docs.json'));
-  const toc: TocInfo[] = await readJSON(path.join(metaDir, repo.namespace, 'toc.json'));
+  const docs: Doc[] = await readJSON(path.join(config.metaDir, repo.namespace, 'docs.json'));
+  const toc: TocInfo[] = await readJSON(path.join(config.metaDir, repo.namespace, 'toc.json'));
 
   // collect toc items
   const tocList = toc

@@ -8,6 +8,8 @@ import fs from 'fs/promises';
 import { config } from '../config.js';
 import { build } from '../lib/builder.js';
 import { crawl } from '../lib/crawler.js';
+import { YuqueExporterError } from '../lib/errors.js';
+import { logger } from '../lib/utils.js';
 
 const options = {
   token: {
@@ -53,22 +55,44 @@ console.log(argv);
 // set config
 Object.assign(config, argv.values);
 
+// validate token
+if (!config.token) {
+  logger.error('Missing YUQUE_TOKEN');
+  logger.info('Set it via: export YUQUE_TOKEN=your_token or use --token flag');
+  logger.info('Get your token at: https://www.yuque.com/settings/tokens');
+  process.exit(1);
+}
+
 // execute command
-const [ command, ...repos ] = argv.positionals;
-switch (command) {
-  case 'crawl': {
-    await crawl(repos);
-    break;
-  }
+try {
+  const [ command, ...repos ] = argv.positionals;
+  switch (command) {
+    case 'crawl': {
+      await crawl(repos);
+      break;
+    }
 
-  case 'build': {
-    await build();
-    break;
-  }
+    case 'build': {
+      await build();
+      break;
+    }
 
-  default: {
-    await crawl(argv.positionals);
-    await build();
-    break;
+    default: {
+      await crawl(argv.positionals);
+      await build();
+      break;
+    }
   }
+} catch (err) {
+  if (err instanceof YuqueExporterError) {
+    logger.error(err.message);
+    if (err.suggestion) {
+      logger.info(err.suggestion);
+    }
+  } else if (err instanceof Error) {
+    logger.error(err.message);
+  } else {
+    logger.error(String(err));
+  }
+  process.exit(1);
 }

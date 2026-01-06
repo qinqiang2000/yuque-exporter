@@ -1,17 +1,10 @@
 # yuque-exporter
 
-批量导出语雀文档为本地 Markdown 文件。
+一键批量导出语雀知识库为本地 Markdown 文件，保留完整目录结构。
 
-## 功能特性
+## 快速开始
 
-- ✅ 批量导出语雀知识库为 Markdown
-- ✅ 保留文档目录结构
-- ✅ 自动下载图片到本地
-- ✅ 转换文档内链为相对路径
-- ✅ 增量更新（只导出变更的文档）
-- ✅ 支持 frontmatter 元数据
-
-## 安装
+### 1. 安装
 
 ```bash
 git clone <your-repo-url>
@@ -20,151 +13,331 @@ npm install
 npm run build
 ```
 
-## 使用方法
+### 2. 获取语雀 Token
 
-### 1. 获取语雀 Token
+访问 **[语雀设置 - Token 管理](https://www.yuque.com/settings/tokens)** 创建一个新 Token，复制保存。
 
-访问 [语雀个人设置 - Token](https://www.yuque.com/settings/tokens) 创建一个新的 Token。
-
-### 2. 导出文档
-
-**推荐方式（使用环境变量）：**
+### 3. 开始导出
 
 ```bash
-# 导出指定知识库
+# 替换 your_token 和 username/repo-name
 YUQUE_TOKEN=your_token node dist/bin/cli.js username/repo-name
-
-# 导出多个知识库
-YUQUE_TOKEN=your_token node dist/bin/cli.js user/repo1 user/repo2
-
-# 导出用户的所有知识库
-YUQUE_TOKEN=your_token node dist/bin/cli.js username
 ```
 
-**或使用命令行参数：**
+导出完成后，文件保存在 `./storage/` 目录。
+
+---
+
+## 使用方式
+
+### 基础用法
+
+```bash
+# 导出单个知识库
+YUQUE_TOKEN=xxx node dist/bin/cli.js username/repo-name
+
+# 导出多个知识库
+YUQUE_TOKEN=xxx node dist/bin/cli.js user/repo1 user/repo2
+
+# 导出用户所有知识库
+YUQUE_TOKEN=xxx node dist/bin/cli.js username
+```
+
+### 使用命令行参数
+
+如果不想用环境变量，可以直接传入 token：
 
 ```bash
 node dist/bin/cli.js --token your_token username/repo-name
 ```
 
-### 3. 查看导出结果
+---
 
-导出的文件默认保存在 `./storage` 目录：
+## 命令参数详解
 
-```bash
-ls storage/
-```
-
-## 命令选项
+### 基本命令格式
 
 ```bash
-yuque-exporter [...repos] [options]
-
-命令：
-  yuque-exporter [...repos]     导出语雀文档（爬取 + 构建）      [默认]
-  yuque-exporter crawl          仅爬取元数据
-  yuque-exporter build          仅构建 Markdown（需先 crawl）
-
-选项：
-  --help       显示帮助信息                                     [boolean]
-  --token      语雀 Token                                       [string]
-  --host       语雀 host                                        [string] [默认: "https://www.yuque.com"]
-  --outputDir  输出目录                                         [string] [默认: "./storage"]
-  --clean      是否清空输出目录                                 [boolean] [默认: false]
+node dist/bin/cli.js [command] [...repos] [options]
 ```
 
-## 使用示例
+### 命令 (Command)
 
-### 导出单个知识库
+| 命令 | 说明 |
+|------|------|
+| `(无命令)` | **默认** - 完整导出（爬取 + 构建） |
+| `crawl` | 仅爬取数据（从语雀 API 获取元数据） |
+| `build` | 仅构建 Markdown（需要先 crawl） |
+
+**示例：**
 
 ```bash
-YUQUE_TOKEN=xxx node dist/bin/cli.js nbklz3/tadboa
+# 完整导出（默认）
+YUQUE_TOKEN=xxx node dist/bin/cli.js username/repo
+
+# 分步执行
+YUQUE_TOKEN=xxx node dist/bin/cli.js crawl username/repo  # 第一步：爬取
+node dist/bin/cli.js build                                 # 第二步：构建
 ```
 
-### 导出用户所有知识库
+### 参数 (Options)
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--token` | string | `$YUQUE_TOKEN` | 语雀 Token（必需） |
+| `--host` | string | `https://www.yuque.com` | 语雀服务器地址 |
+| `--outputDir` | string | `./storage` | 输出目录路径 |
+| `--clean` | boolean | `false` | 清空输出目录后重新导出 |
+| `--help` / `-h` | boolean | - | 显示帮助信息 |
+
+#### `--token` - 认证凭证
+
+提供语雀 API Token，有两种方式：
 
 ```bash
-YUQUE_TOKEN=xxx node dist/bin/cli.js nbklz3
+# 方式 1：环境变量（推荐）
+export YUQUE_TOKEN=your_token
+node dist/bin/cli.js username/repo
+
+# 方式 2：命令行参数
+node dist/bin/cli.js --token your_token username/repo
 ```
 
-### 清空目录重新导出
+#### `--outputDir` - 自定义输出目录
+
+指定 Markdown 文件和元数据的保存位置：
 
 ```bash
-YUQUE_TOKEN=xxx node dist/bin/cli.js --clean nbklz3/tadboa
+YUQUE_TOKEN=xxx node dist/bin/cli.js --outputDir /path/to/output username/repo
 ```
 
-### 自定义输出目录
+输出结构：
+```
+/path/to/output/
+├── .meta/           # 元数据缓存
+└── 知识库名称/       # Markdown 文件
+```
+
+#### `--clean` - 清空重建
+
+删除输出目录后重新导出（慎用）：
 
 ```bash
-YUQUE_TOKEN=xxx node dist/bin/cli.js --outputDir ./my-docs nbklz3/tadboa
+YUQUE_TOKEN=xxx node dist/bin/cli.js --clean username/repo
 ```
 
-### 分步执行
+**⚠️ 警告：** 此操作会删除 `outputDir` 下的所有文件，包括 `.meta` 缓存。
+
+#### `--host` - 私有部署
+
+如果使用语雀私有部署版本：
 
 ```bash
-# 第一步：爬取元数据
-YUQUE_TOKEN=xxx node dist/bin/cli.js crawl nbklz3/tadboa
-
-# 第二步：构建 Markdown
-node dist/bin/cli.js build
+YUQUE_TOKEN=xxx node dist/bin/cli.js --host https://your-yuque-server.com username/repo
 ```
 
-## 工作原理
+---
 
-1. **爬取阶段** - 调用语雀 API 获取知识库、文档列表、TOC 等元数据
-2. **存储元数据** - 将元数据保存到 `./storage/.meta` 目录
-3. **构建阶段** - 根据 TOC 构建目录结构，转换文档为 Markdown
-4. **资源处理** - 下载图片、替换链接为相对路径
+## 完整示例
 
-## 增量更新
+### 场景 1：导出单个知识库到默认目录
 
-再次运行相同命令时，工具会：
+```bash
+YUQUE_TOKEN=abc123 node dist/bin/cli.js nbklz3/my-notes
+```
 
-- 比较文档的 `published_at` 时间戳
-- 只爬取和构建变更过的文档
-- 跳过未变更的文档以提高效率
-
-## 目录结构
-
+结果：
 ```
 ./storage/
-├── .meta/              # 元数据缓存
-│   └── username/
-│       └── repo/
-│           ├── repo.json
-│           ├── toc.json
-│           ├── docs.json
-│           └── docs/
-│               └── *.json
-└── 知识库名称/          # 导出的 Markdown 文件
+├── .meta/nbklz3/my-notes/  # 元数据
+└── My Notes/               # Markdown 文件
     ├── 文档1.md
-    ├── 文档2.md
     └── 子目录/
-        └── 文档3.md
 ```
 
-## 注意事项
-
-- API 限制：5000 次/小时
-- 附件下载需要登录，暂不支持
-- 文档内链会被转换为相对路径
-- 草稿文档也会被导出
-
-## 开发
+### 场景 2：导出到自定义目录
 
 ```bash
-# 开发模式
+YUQUE_TOKEN=abc123 node dist/bin/cli.js \
+  --outputDir ~/Documents/yuque-backup \
+  nbklz3/my-notes
+```
+
+### 场景 3：清空重新导出
+
+```bash
+YUQUE_TOKEN=abc123 node dist/bin/cli.js --clean nbklz3/my-notes
+```
+
+### 场景 4：导出用户所有知识库
+
+```bash
+YUQUE_TOKEN=abc123 node dist/bin/cli.js nbklz3
+```
+
+### 场景 5：批量导出多个知识库
+
+```bash
+YUQUE_TOKEN=abc123 node dist/bin/cli.js \
+  nbklz3/repo1 \
+  nbklz3/repo2 \
+  nbklz3/repo3
+```
+
+---
+
+## 功能特性
+
+- ✅ **批量导出** - 支持单个/多个知识库/全部知识库
+- ✅ **保留结构** - 完整保留语雀目录层级
+- ✅ **图片下载** - 自动下载图片到 `assets/` 目录
+- ✅ **相对链接** - 文档内链转换为相对路径
+- ✅ **增量更新** - 只导出变更的文档，节省时间
+- ✅ **Frontmatter** - 包含标题、URL 等元数据
+- ✅ **多格式支持** - Markdown、Lake 格式、表格
+- ✅ **草稿文档** - 导出到 `_未分类文档/` 目录
+
+---
+
+## 增量更新机制
+
+再次运行相同命令时，工具会智能跳过未变更的文档：
+
+1. 比较文档的 `published_at` 时间戳
+2. 仅下载和转换更新过的文档
+3. 大幅提升重复导出速度
+
+**示例：**
+
+```bash
+# 第一次导出（完整）
+YUQUE_TOKEN=xxx node dist/bin/cli.js username/repo
+# 导出 100 篇文档...
+
+# 第二次导出（增量）
+YUQUE_TOKEN=xxx node dist/bin/cli.js username/repo
+# 仅导出 3 篇更新的文档
+```
+
+---
+
+## 常见问题
+
+### ❌ 错误：Missing YUQUE_TOKEN
+
+**原因：** 未设置 Token
+
+**解决：**
+```bash
+# 方法 1：设置环境变量
+export YUQUE_TOKEN=your_token
+
+# 方法 2：使用 --token 参数
+node dist/bin/cli.js --token your_token username/repo
+```
+
+### ❌ 错误：Authentication failed: bad X-Auth-Token
+
+**原因：** Token 无效或已过期
+
+**解决：**
+1. 访问 https://www.yuque.com/settings/tokens
+2. 检查 Token 是否有效
+3. 如已失效，删除旧 Token 并创建新的
+
+### ❌ 错误：Resource not found
+
+**原因：** 知识库路径错误或无权限访问
+
+**解决：**
+- 检查路径格式是否为 `username/repo-name`
+- 确认 Token 对应账号有访问权限
+- 确认知识库是否存在
+
+### ❌ 错误：Rate limit exceeded
+
+**原因：** API 调用次数超限（5000 次/小时）
+
+**解决：** 等待一段时间后重试，或使用增量更新减少 API 调用。
+
+---
+
+## 目录结构说明
+
+```
+./storage/                      # 默认输出目录
+├── .meta/                      # 元数据缓存（JSON 格式）
+│   └── username/
+│       └── repo-name/
+│           ├── repo.json       # 知识库信息
+│           ├── toc.json        # 目录结构
+│           ├── docs.json       # 文档列表
+│           ├── docs-published-at.json  # 更新时间戳
+│           └── docs/           # 文档详情
+│               ├── doc1.json
+│               └── doc2.json
+│
+└── 知识库标题/                  # Markdown 输出
+    ├── 文档1.md
+    ├── 文档2.md
+    ├── 子目录/
+    │   └── 子文档.md
+    ├── assets/                 # 图片资源
+    │   └── image1.png
+    └── _未分类文档/             # 草稿/未分类文档
+        └── 草稿.md
+```
+
+---
+
+## 开发相关
+
+### 开发模式
+
+```bash
+# 启动开发模式（自动重载）
 YUQUE_TOKEN=xxx npm run start:dev
 
-# 构建
+# 编译 TypeScript
 npm run build
 
 # 代码检查
 npm run lint
 
-# 修复代码风格
+# 自动修复代码风格
 npm run lint:fix
+
+# 运行测试
+npm test
 ```
+
+### 项目架构
+
+```
+src/
+├── bin/
+│   └── cli.ts         # CLI 入口
+├── lib/
+│   ├── sdk.ts         # 语雀 API 客户端
+│   ├── crawler.ts     # 爬取逻辑
+│   ├── builder.ts     # 构建逻辑
+│   ├── tree.ts        # 目录树处理
+│   ├── doc.ts         # 文档转换
+│   ├── errors.ts      # 错误处理
+│   └── utils.ts       # 工具函数
+└── config.ts          # 全局配置
+```
+
+---
+
+## 注意事项
+
+1. **API 限制** - 语雀 API 限制 5000 次请求/小时
+2. **附件下载** - 附件（非图片）暂不支持下载
+3. **私有知识库** - 确保 Token 有访问权限
+4. **文件名冲突** - 同名文件自动添加 `_1`、`_2` 后缀
+
+---
 
 ## License
 
