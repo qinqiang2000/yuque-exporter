@@ -86,7 +86,8 @@ The tool operates in two distinct phases:
 **`src/config.ts`** - Global configuration
 - Reads `YUQUE_TOKEN` from environment variable
 - Default output: `./storage`, metadata: `./storage/.meta`
-- Configurable via CLI flags: `--token`, `--host`, `--outputDir`, `--clean`
+- Configurable via CLI flags: `--token`, `--host`, `-o`/`--output`, `--repo`, `--clean`
+- `--repo` allows customizing the output folder name instead of using the repo name
 
 ### CLI Usage Patterns
 
@@ -101,12 +102,25 @@ node dist/bin/cli.js crawl user/repo
 
 # Build only (requires prior crawl)
 node dist/bin/cli.js build
+
+# Custom output directory and repo folder name
+node dist/bin/cli.js user/repo -o /path/to/output --repo custom-name
+
+# Example with YUQUE_TOKEN environment variable
+YUQUE_TOKEN=xxx node dist/bin/cli.js nbklz3/pgrkef --clean -o /Users/qinqiang02/colab/office/ai-knowledge-base/data/kb --repo my-knowledge-base
 ```
 
 Input patterns:
 - `user` - exports all repos for the user
 - `user/repo` - exports specific repo
 - Multiple repos: `user/repo1 user/repo2`
+
+CLI Options:
+- `-o, --output` - Output target directory (default: `./storage`)
+- `--repo` - Custom repo directory name (default: uses repo name from Yuque)
+- `--clean` - Clean the output directory before exporting
+- `--token` - Yuque API token (can also use `YUQUE_TOKEN` env var)
+- `--host` - Yuque host (default: `https://www.yuque.com`)
 
 ### Incremental Updates
 

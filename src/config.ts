@@ -5,6 +5,7 @@ export const config = {
   token: process.env.YUQUE_TOKEN,
   userAgent: 'yuque-exporter',
   outputDir: './storage',
+  repoDir: undefined as string | undefined,
   clean: false,
   get metaDir() {
     return path.join(config.outputDir, '.meta');

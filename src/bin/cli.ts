@@ -21,10 +21,15 @@ const options = {
     description: 'yuque host',
     default: 'https://www.yuque.com',
   },
-  outputDir: {
+  output: {
     type: 'string' as const,
     description: 'output target directory',
     default: './storage',
+    short: 'o',
+  },
+  repo: {
+    type: 'string' as const,
+    description: 'custom repo directory name',
   },
   clean: {
     type: 'boolean' as const,
@@ -53,7 +58,11 @@ if (argv.values.help) {
 console.log(argv);
 
 // set config
-Object.assign(config, argv.values);
+const { output, repo, ...restValues } = argv.values;
+Object.assign(config, restValues, {
+  outputDir: output || config.outputDir,
+  repoDir: repo,
+});
 
 // validate token
 if (!config.token) {
