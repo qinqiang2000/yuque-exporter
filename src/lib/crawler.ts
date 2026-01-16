@@ -4,7 +4,7 @@ import yaml from 'yaml';
 import fg from 'fast-glob';
 
 import { SDK } from './sdk.js';
-import { logger, writeFile, rm, readJSON } from './utils.js';
+import { logger, writeFile, readJSON } from './utils.js';
 import { config } from '../config.js';
 
 const taskQueue = new PQueue({ concurrency: 10 });
@@ -21,8 +21,6 @@ function getSDK() {
 
 export async function crawl(inputs?: string[]) {
   logger.info('Start crawling...');
-  const { clean, metaDir } = config;
-  if (clean) await rm(metaDir);
 
   // if inputs is empty, crawl all repos of the user which associated with the token
   if (!inputs || inputs.length === 0) inputs = [ '' ];
@@ -66,7 +64,14 @@ export async function crawlRepo(namespace: string) {
   logger.success(`Crawling repo detail: ${host}/${namespace}`);
   const repo = await getSDK().getRepoDetail(namespace);
   const toc = yaml.parse(repo.toc_yml);
-  const docList = await getSDK().getDocs(namespace);
+  logger.info('Fetching document list...');
+  const docList = await getSDK().getDocs(namespace, (loaded, total) => {
+    process.stdout.write(`\r  Loading documents: ${loaded}/${total}`);
+  });
+  if (docList.length > 0) {
+    process.stdout.write('\n'); // New line after progress
+  }
+  logger.success(`Loaded ${docList.length} documents`);
   const docsPublishedAtKey = 'docs-published-at';
 
   // Read the old published_at map BEFORE overwriting it

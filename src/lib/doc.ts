@@ -71,7 +71,12 @@ async function loadDocsPublishedAtMap() {
   if (Object.keys(docsPublishedAtMap).length > 0) return;
   const docsPublishedAtPath = await fg('**/docs-published-at.json', { cwd: config.metaDir, deep: 3 });
   if (docsPublishedAtPath.length > 0) {
-    docsPublishedAtMap = await readJSON(path.join(config.metaDir, docsPublishedAtPath[0]));
+    const fullPath = path.join(config.metaDir, docsPublishedAtPath[0]);
+    logger.info(`[DEBUG] Loading published-at map from: ${fullPath}`);
+    docsPublishedAtMap = await readJSON(fullPath);
+    logger.info(`[DEBUG] Loaded ${Object.keys(docsPublishedAtMap).length} entries`);
+  } else {
+    logger.warn('[DEBUG] No docs-published-at.json found!');
   }
 }
 
@@ -97,9 +102,15 @@ export async function buildDoc(doc: TreeNode, mapping: Record<string, TreeNode>)
   }
 
   // Only skip if published_at unchanged AND the markdown file already exists
-  if (typeof docsPublishedAtMap[docDetail.id] !== 'undefined' && docsPublishedAtMap[docDetail.id] === docDetail.published_at) {
+  const cachedPublishedAt = docsPublishedAtMap[docDetail.id];
+  const currentPublishedAt = docDetail.published_at;
+  const publishedAtMatches = typeof cachedPublishedAt !== 'undefined' && cachedPublishedAt === currentPublishedAt;
+
+  if (publishedAtMatches) {
     const mdPath = path.join(config.outputDir, `${doc.filePath}.md`);
     if (await exists(mdPath)) {
+      // File exists and hasn't changed, skip rebuilding
+      logger.info(`Skipping unchanged: ${doc.title}`);
       return null;
     }
   }
@@ -209,7 +220,8 @@ function isYuqueDocLink(url?: string) {
 function downloadAsset(opts: Options) {
   return async tree => {
     const docFilePath = opts.doc.filePath;
-    const assetsDir = path.join(docFilePath.split('/')[0], 'assets');
+    // Place all assets in the root 'assets' directory for centralized access
+    const assetsDir = 'assets';
 
     // FIXME: 语雀附件现在不允许直接访问，需要登录后才能下载，这里先跳过。
     // const assetNodes = selectAll(`image[url^=http], link[url^=${host}/attachments/]`, tree) as Link[];

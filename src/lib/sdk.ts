@@ -120,7 +120,7 @@ export class SDK {
     return await this.requestAPI<RepoDetail>(`repos/${namespace}`);
   }
 
-  async getDocs(namespace: string) {
+  async getDocs(namespace: string, onProgress?: (loaded: number, total: number) => void) {
     const allDocs: Doc[] = [];
     let offset = 0;
     const limit = 100; // Yuque API limit per page
@@ -132,6 +132,12 @@ export class SDK {
 
       // Check if we've fetched all documents
       const total = response.meta?.total || docs.length;
+
+      // Report progress if callback provided
+      if (onProgress) {
+        onProgress(allDocs.length, total);
+      }
+
       if (allDocs.length >= total || docs.length === 0) {
         break;
       }

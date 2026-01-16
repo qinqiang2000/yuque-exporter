@@ -7,6 +7,7 @@ export const config = {
   outputDir: './storage',
   repoDir: undefined as string | undefined,
   clean: false,
+  skipDraft: true,
   get metaDir() {
     return path.join(config.outputDir, '.meta');
   },

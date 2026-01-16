@@ -51,20 +51,25 @@ export async function buildTree(repos: Repository[]) {
     const { node, parent } = args;
     const { type, parent_uuid } = node;
 
-    const title = filenamify(node.title, { replacement: '_' });
-    const key = `${parent_uuid}/${type}/${title}`;
-    const count = duplicateMap.get(key) || 0;
-    if (count) {
-      // TODO: whether use slug as key suffix?
-      node.filePath = `${title}_${count}`;
-      duplicateMap.set(key, count + 1);
+    // Special handling: when --repo is '.', skip the repo directory layer
+    if (type === 'REPO' && config.repoDir === '.') {
+      node.filePath = '';
     } else {
-      node.filePath = title;
-      duplicateMap.set(key, 1);
-    }
+      const title = filenamify(node.title, { replacement: '_' });
+      const key = `${parent_uuid}/${type}/${title}`;
+      const count = duplicateMap.get(key) || 0;
+      if (count) {
+        // TODO: whether use slug as key suffix?
+        node.filePath = `${title}_${count}`;
+        duplicateMap.set(key, count + 1);
+      } else {
+        node.filePath = title;
+        duplicateMap.set(key, 1);
+      }
 
-    if (parent.filePath) {
-      node.filePath = `${parent.filePath}/${node.filePath}`;
+      if (parent.filePath) {
+        node.filePath = `${parent.filePath}/${node.filePath}`;
+      }
     }
 
     if (type === 'DOC' || type === 'UNCREATED_DOC' || type === 'DRAFT_DOC') {
@@ -116,8 +121,8 @@ export async function buildRepoTree(repo: Repository) {
   const slugSet = new Set(tocList.map(item => item.url));
   const draftDocs = docs.filter(doc => !slugSet.has(doc.slug));
 
-  // If there are draft docs, create a special folder for them
-  if (draftDocs.length > 0) {
+  // If there are draft docs and we're not skipping them, create a special folder for them
+  if (draftDocs.length > 0 && !config.skipDraft) {
     const uncategorizedFolderUuid = `${repoNode.uuid}_uncategorized`;
     const uncategorizedFolder: TreeNode = {
       type: 'TITLE',

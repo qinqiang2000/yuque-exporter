@@ -36,6 +36,11 @@ const options = {
     description: 'Whether clean the output target directory',
     default: false,
   },
+  'skip-draft': {
+    type: 'boolean' as const,
+    description: 'Skip draft and uncategorized documents',
+    default: true,
+  },
   help: {
     type: 'boolean' as const,
     description: 'Show help',
@@ -58,10 +63,11 @@ if (argv.values.help) {
 console.log(argv);
 
 // set config
-const { output, repo, ...restValues } = argv.values;
+const { output, repo, 'skip-draft': skipDraft, ...restValues } = argv.values;
 Object.assign(config, restValues, {
   outputDir: output || config.outputDir,
   repoDir: repo,
+  skipDraft: skipDraft,
 });
 
 // validate token

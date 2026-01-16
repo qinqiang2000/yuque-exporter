@@ -7,6 +7,7 @@ Usages:
   yuque-exporter --token=<your_token> eggjs
   yuque-exporter --token=<your_token> atian25/test atian25/blog
   yuque-exporter --token=<your_token> user/repo -o /path/to/output --repo custom-name
+  yuque-exporter --token=<your_token> user/repo -o /path/to/output --repo .
   YUQUE_TOKEN=<your_token> yuque-exporter
 
 Commands:
@@ -20,5 +21,6 @@ Options:
   --token         yuque token                                          [string] [default: process.env.YUQUE_TOKEN]
   --host          yuque host                                           [string] [default: "https://www.yuque.com"]
   -o, --output    output target directory                              [string] [default: "./storage"]
-  --repo          custom repo directory name                           [string]
+  --repo          custom repo directory name, use "." to skip layer    [string]
   --clean         Whether clean the output target directory            [boolean] [default: false]
+  --skip-draft    Skip draft and uncategorized documents               [boolean] [default: true]
