@@ -3,7 +3,6 @@ import path from 'path';
 import type { Link, Text } from 'mdast';
 import { remark } from 'remark';
 import { selectAll } from 'unist-util-select';
-import yaml from 'yaml';
 import fg from 'fast-glob';
 
 import { TreeNode } from './types.js';
@@ -150,7 +149,7 @@ export async function buildDoc(doc: TreeNode, mapping: Record<string, TreeNode>)
   // Skip empty documents that have children (directory-like docs)
   // These docs serve as folders in Yuque and their .md files are not meaningful
   if (doc.children && doc.children.length > 0) {
-    const contentWithoutFrontmatter = doc.content.replace(/^---[\s\S]*?---\s*/m, '').trim();
+    const contentWithoutFrontmatter = doc.content.replace(/^.*?\n---\n\n/m, '').trim();
     // Consider a doc "empty" if it has less than 50 characters of actual content
     if (!contentWithoutFrontmatter || contentWithoutFrontmatter.length < 50) {
       logger.info(`[INFO] Skipping empty directory-document: ${doc.title} (has ${doc.children.length} children)`);
@@ -162,15 +161,8 @@ export async function buildDoc(doc: TreeNode, mapping: Record<string, TreeNode>)
 }
 
 function frontmatter(doc) {
-  const frontMatter = yaml.stringify({
-    title: doc.title,
-    url: `${config.host}/${doc.namespace}/${doc.url}`,
-    // slug: doc.slug,
-    // public: doc.public,
-    // status: doc.status,
-    // description: doc.description,
-  });
-  return `---\n${frontMatter}---\n\n`;
+  const url = `${config.host}/${doc.namespace}/${doc.url}`;
+  return `[${doc.title}](${url})\n---\n\n`;
 }
 
 function replaceHTML() {
