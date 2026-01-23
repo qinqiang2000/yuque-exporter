@@ -11,8 +11,20 @@ import { config } from '../config.js';
 
 const taskQueue = new PQueue({ concurrency: 10 });
 
+// Manifest type for tracking generated files
+interface Manifest {
+  files: string[];      // Relative paths to all generated files
+  directories: string[]; // Relative paths to all generated directories
+}
+
+async function updateDocsPublishedAt(namespace: string, publishedAtMap: Record<number, string>) {
+  const filePath = path.join(config.metaDir, namespace, 'docs-published-at.json');
+  await writeFile(filePath, publishedAtMap);
+  logger.info(`Updated published timestamps for ${namespace}`);
+}
+
 // TODO: support inputs so only build the specified repos
-export async function build() {
+export async function build(crawlResults?: Array<{ namespace: string; newDocsPublishedAtMap: Record<number, string> }>) {
   logger.info('Start building...');
 
   // Clean output directory if requested (but preserve .meta directory)
@@ -34,6 +46,9 @@ export async function build() {
     return;
   }
 
+  // Load previous manifest for cleanup comparison
+  const oldManifest = await loadManifest();
+
   // Load previous doc-to-filepath mapping to detect renames
   const oldDocFilePaths = await loadDocFilePaths();
 
@@ -43,36 +58,32 @@ export async function build() {
   // Track current doc-to-filepath mapping for saving later
   const newDocFilePaths: Record<string, string> = {};
 
-  // Track all expected file paths for orphan cleanup
-  const expectedPaths = new Set<string>();
+  // Track all generated files and directories for manifest
+  const newManifestFiles = new Set<string>();
+  const newManifestDirectories = new Set<string>();
 
   // travel tree to build docs
   const tasks: (() => Promise<void>)[] = [];
   for (const { node } of tree) {
-    const fullPath = path.join(config.outputDir, node.filePath);
-
     switch (node.type) {
       case 'TITLE':
-        expectedPaths.add(fullPath);
-        tasks.push(() => mkdir(fullPath));
+        newManifestDirectories.add(node.filePath);
+        tasks.push(() => mkdir(path.join(config.outputDir, node.filePath)));
         break;
 
       case 'UNCREATED_DOC':
-        expectedPaths.add(`${fullPath}.md`);
-        tasks.push(() => writeFile(`${fullPath}.md`, ''));
+        newManifestFiles.add(`${node.filePath}.md`);
+        tasks.push(() => writeFile(path.join(config.outputDir, `${node.filePath}.md`), ''));
         break;
 
       case 'LINK':
-        expectedPaths.add(`${fullPath}.md`);
-        tasks.push(() => writeFile(`${fullPath}.md`, node.url));
+        newManifestFiles.add(`${node.filePath}.md`);
+        tasks.push(() => writeFile(path.join(config.outputDir, `${node.filePath}.md`), node.url));
         break;
 
       case 'DRAFT_DOC':
       case 'DOC':
-        expectedPaths.add(`${fullPath}.md`);
-        // Also track assets directory for this doc (centralized in root)
-        const assetsDir = path.join(config.outputDir, 'assets', node.url);
-        expectedPaths.add(assetsDir);
+        newManifestFiles.add(`${node.filePath}.md`);
 
         // Track doc ID to filepath mapping for rename detection
         const docKey = `${node.namespace}/${node.url}`;
@@ -109,67 +120,124 @@ export async function build() {
   // TODO: only warn when error
   await taskQueue.addAll(tasks);
 
-  // Clean up orphaned files (files that exist but are not in expectedPaths)
+  // Build new manifest
+  const newManifest: Manifest = {
+    files: Array.from(newManifestFiles).sort(),
+    directories: Array.from(newManifestDirectories).sort(),
+  };
+
+  // Clean up deleted files by comparing manifests
   // Skip if --clean was used since directory was already emptied
-  if (!config.clean) {
-    logger.info('Cleaning up orphaned files...');
-    await cleanOrphanedFiles(config.outputDir, expectedPaths);
-  } else {
-    logger.info('Skipping orphaned file cleanup (--clean was used)');
+  if (!config.clean && oldManifest) {
+    logger.info('Cleaning up deleted files...');
+    await cleanDeletedFiles(config.outputDir, oldManifest, newManifest);
+  } else if (config.clean) {
+    logger.info('Skipping deleted file cleanup (--clean was used)');
   }
+
+  // Save the new manifest
+  await saveManifest(newManifest);
 
   // Save the new doc-to-filepath mapping
   await saveDocFilePaths(newDocFilePaths);
 
+  // Update published timestamps after build completes successfully
+  if (crawlResults && crawlResults.length > 0) {
+    logger.info('Updating published timestamps...');
+    for (const result of crawlResults) {
+      await updateDocsPublishedAt(result.namespace, result.newDocsPublishedAtMap);
+    }
+  }
+
   logger.info('Build completed.');
 }
 
-async function cleanOrphanedFiles(outputDir: string, expectedPaths: Set<string>) {
-  // Find all files and directories in output (excluding .meta and assets)
-  const allFiles = await fg('**/*', {
-    cwd: outputDir,
-    onlyFiles: false,
-    ignore: ['.meta/**', '.temp/**'],
-    dot: false,
-    markDirectories: true,
-  });
+async function loadManifest(): Promise<Manifest | null> {
+  const manifestPath = path.join(config.metaDir, 'manifest.json');
+  try {
+    return await readJSON(manifestPath);
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      // Manifest doesn't exist yet (first run)
+      return null;
+    }
+    throw err;
+  }
+}
 
-  // Sort by path length descending so we process deeper paths first
-  // This ensures we can delete empty directories after their contents
-  allFiles.sort((a, b) => b.length - a.length);
+async function saveManifest(manifest: Manifest): Promise<void> {
+  const manifestPath = path.join(config.metaDir, 'manifest.json');
+  await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+  logger.info(`Saved manifest to ${manifestPath}`);
+}
 
-  for (const relativePath of allFiles) {
-    const fullPath = path.join(outputDir, relativePath);
+async function cleanDeletedFiles(outputDir: string, oldManifest: Manifest, newManifest: Manifest): Promise<void> {
+  const oldFiles = new Set(oldManifest.files);
+  const newFiles = new Set(newManifest.files);
 
-    // Skip if this path or any parent is expected
-    let isExpected = false;
-    for (const expected of expectedPaths) {
-      if (fullPath === expected || fullPath.startsWith(expected + '/') || expected.startsWith(fullPath + '/')) {
-        isExpected = true;
-        break;
+  // Delete files that exist in old manifest but not in new manifest
+  for (const file of oldFiles) {
+    if (!newFiles.has(file)) {
+      const fullPath = path.join(outputDir, file);
+      if (await fs.pathExists(fullPath)) {
+        logger.info(`Deleted: ${file}`);
+        await fs.remove(fullPath);
       }
     }
+  }
 
-    // Skip assets directories (they are managed by doc building)
-    // Check both subdirectory assets (xxx/assets/) and root assets (assets/)
-    if (relativePath.includes('/assets/') || relativePath.startsWith('assets/')) {
-      continue;
+  // Clean up empty directories (from deep to shallow)
+  await cleanEmptyDirectories(outputDir, oldManifest.directories, newManifest.directories);
+}
+
+async function cleanEmptyDirectories(
+  outputDir: string,
+  oldDirs: string[],
+  newDirs: string[]
+): Promise<void> {
+  const oldDirSet = new Set(oldDirs);
+  const newDirSet = new Set(newDirs);
+
+  // Find directories that were in old manifest but not in new
+  const deletedDirs = [...oldDirSet].filter(dir => !newDirSet.has(dir));
+
+  // Sort by path depth descending (deeper paths first)
+  deletedDirs.sort((a, b) => b.split('/').length - a.split('/').length);
+
+  for (const dir of deletedDirs) {
+    const fullPath = path.join(outputDir, dir);
+    if (await fs.pathExists(fullPath)) {
+      const contents = await fs.readdir(fullPath);
+      if (contents.length === 0) {
+        logger.info(`Deleted empty directory: ${dir}`);
+        await fs.remove(fullPath);
+      }
     }
+  }
 
-    if (!isExpected) {
-      const stat = await fs.stat(fullPath).catch(() => null);
-      if (!stat) continue;
+  // Also check parent directories of deleted files that might now be empty
+  // Scan for any empty directories not in the new manifest
+  const allDirs = await fg('**/', {
+    cwd: outputDir,
+    onlyDirectories: true,
+    ignore: ['.meta/**', '.temp/**', 'assets/**'],
+    dot: false,
+  });
 
-      if (stat.isDirectory()) {
-        // Only delete empty directories
+  // Sort by depth descending
+  allDirs.sort((a, b) => b.split('/').length - a.split('/').length);
+
+  for (const dir of allDirs) {
+    // Remove trailing slash if present
+    const cleanDir = dir.replace(/\/$/, '');
+    if (!newDirSet.has(cleanDir)) {
+      const fullPath = path.join(outputDir, cleanDir);
+      if (await fs.pathExists(fullPath)) {
         const contents = await fs.readdir(fullPath);
         if (contents.length === 0) {
-          logger.info(`Deleting orphaned directory: ${fullPath}`);
+          logger.info(`Deleted empty directory: ${cleanDir}`);
           await fs.remove(fullPath);
         }
-      } else {
-        logger.info(`Deleting orphaned file: ${fullPath}`);
-        await fs.remove(fullPath);
       }
     }
   }
