@@ -83,18 +83,18 @@ try {
   const [ command, ...repos ] = argv.positionals;
   switch (command) {
     case 'crawl': {
-      await crawl(repos);
+      await crawl(repos, true);  // updateTimestamps = true for standalone mode
       break;
     }
 
     case 'build': {
-      await build();
+      await build();  // No crawl results in build-only mode
       break;
     }
 
     default: {
-      await crawl(argv.positionals);
-      await build();
+      const crawlResults = await crawl(argv.positionals, false);  // Don't update yet
+      await build(crawlResults);  // Build will update after success
       break;
     }
   }

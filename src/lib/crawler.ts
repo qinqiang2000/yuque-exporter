@@ -19,7 +19,7 @@ function getSDK() {
   return sdk;
 }
 
-export async function crawl(inputs?: string[]) {
+export async function crawl(inputs?: string[], updateTimestamps = false) {
   logger.info('Start crawling...');
 
   // if inputs is empty, crawl all repos of the user which associated with the token
@@ -53,9 +53,18 @@ export async function crawl(inputs?: string[]) {
   logger.info(`Find repos to crawl: ${[ '', ...repoList ].join('\n  - ')}\n`);
 
   // crawl repos
+  const crawlResults = [];
   for (const namespace of repoList) {
-    await crawlRepo(namespace);
+    const result = await crawlRepo(namespace);
+    crawlResults.push(result);
+
+    // If running standalone crawl, update timestamps immediately
+    if (updateTimestamps) {
+      await saveToStorage(`${result.namespace}/docs-published-at.json`, result.newDocsPublishedAtMap);
+    }
   }
+
+  return crawlResults;
 }
 
 export async function crawlRepo(namespace: string) {
@@ -84,9 +93,11 @@ export async function crawlRepo(namespace: string) {
   await saveToStorage(`${namespace}/repo.json`, repo);
   await saveToStorage(`${namespace}/toc.json`, toc);
   await saveToStorage(`${namespace}/docs.json`, docList);
-  await saveToStorage(`${namespace}/docs-published-at.json`, Object.fromEntries(
+
+  // Create new timestamp map but don't persist yet (will be updated after build completes)
+  const newDocsPublishedAtMap = Object.fromEntries(
     [ ...docList.entries() ].map(([ _index, doc ]) => [ doc.id, doc.published_at ]),
-  ));
+  );
 
   // crawl repo docs
   // throw new Error(JSON.stringify(docsPublishedAtMap));
@@ -107,7 +118,7 @@ export async function crawlRepo(namespace: string) {
 
   logger.log('');
 
-  return { repo, toc, docList, docs };
+  return { repo, toc, docList, docs, namespace, newDocsPublishedAtMap };
 }
 
 async function saveToStorage(filePath: string, content) {
