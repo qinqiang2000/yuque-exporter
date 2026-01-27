@@ -12,3 +12,7 @@ npm-debug.log
 storage
 dist
 tmp
+
+# Sync script and logs
+sync-yuque.sh
+*.log

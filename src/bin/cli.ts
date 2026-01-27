@@ -41,6 +41,23 @@ const options = {
     description: 'Skip draft and uncategorized documents',
     default: true,
   },
+  timeout: {
+    type: 'string' as const,
+    description: 'Request timeout in milliseconds',
+  },
+  concurrency: {
+    type: 'string' as const,
+    description: 'Number of concurrent requests',
+    short: 'c',
+  },
+  'max-retries': {
+    type: 'string' as const,
+    description: 'Maximum number of retries on failure',
+  },
+  'retry-delay': {
+    type: 'string' as const,
+    description: 'Initial delay between retries in milliseconds',
+  },
   help: {
     type: 'boolean' as const,
     description: 'Show help',
@@ -63,11 +80,25 @@ if (argv.values.help) {
 console.log(argv);
 
 // set config
-const { output, repo, 'skip-draft': skipDraft, ...restValues } = argv.values;
+const {
+  output,
+  repo,
+  'skip-draft': skipDraft,
+  timeout,
+  concurrency,
+  'max-retries': maxRetries,
+  'retry-delay': retryDelay,
+  ...restValues
+} = argv.values;
+
 Object.assign(config, restValues, {
   outputDir: output || config.outputDir,
   repoDir: repo,
   skipDraft: skipDraft,
+  timeout: timeout ? parseInt(timeout, 10) : config.timeout,
+  concurrency: concurrency ? parseInt(concurrency, 10) : config.concurrency,
+  maxRetries: maxRetries ? parseInt(maxRetries, 10) : config.maxRetries,
+  retryDelay: retryDelay ? parseInt(retryDelay, 10) : config.retryDelay,
 });
 
 // validate token

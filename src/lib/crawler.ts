@@ -7,14 +7,21 @@ import { SDK } from './sdk.js';
 import { logger, writeFile, readJSON } from './utils.js';
 import { config } from '../config.js';
 
-const taskQueue = new PQueue({ concurrency: 10 });
+// Lazy initialize task queue based on config
+let taskQueue: PQueue;
+function getTaskQueue() {
+  if (!taskQueue) {
+    taskQueue = new PQueue({ concurrency: config.concurrency });
+  }
+  return taskQueue;
+}
 
 // Lazy initialize SDK to avoid requiring token during module import
 let sdk: SDK;
 function getSDK() {
   if (!sdk) {
-    const { host, token, userAgent } = config;
-    sdk = new SDK({ token, host, userAgent });
+    const { host, token, userAgent, timeout, maxRetries, retryDelay } = config;
+    sdk = new SDK({ token, host, userAgent, timeout, maxRetries, retryDelay });
   }
   return sdk;
 }
@@ -105,7 +112,8 @@ export async function crawlRepo(namespace: string) {
     .filter(doc => typeof docsPublishedAtMap[doc.id] === 'undefined' || docsPublishedAtMap[doc.id] !== doc.published_at);
   let docs = [];
   if (docChangedList.length) {
-    docs = await taskQueue.addAll(docChangedList.map(doc => {
+    logger.info(`Fetching ${docChangedList.length} changed documents with concurrency: ${config.concurrency}`);
+    docs = await getTaskQueue().addAll(docChangedList.map(doc => {
       return async () => {
         logger.success(` - [${doc.title}](${host}/${namespace}/${doc.slug})`);
         const docDetail = await getSDK().getDocDetail(namespace, doc.slug);
