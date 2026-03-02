@@ -1,4 +1,5 @@
 import path from 'path';
+import zlib from 'zlib';
 
 import type { Link, Text } from 'mdast';
 import { remark } from 'remark';
@@ -20,12 +21,38 @@ interface LakesheetData {
   }[];
 }
 
-function convertLakesheetToMarkdown(bodySheet: string): string {
+function getHiddenSheetIds(body?: string): Set<string> {
+  try {
+    if (!body) return new Set();
+    const parsed = JSON.parse(body);
+    if (!parsed.sheet) return new Set();
+    const buf = Buffer.from(parsed.sheet, 'latin1');
+    const decompressed = zlib.inflateSync(buf);
+    const sheets = JSON.parse(decompressed.toString());
+    const hiddenIds = new Set<string>();
+    for (const s of sheets) {
+      if (s.hidden === true) {
+        hiddenIds.add(s.id);
+      }
+    }
+    return hiddenIds;
+  } catch {
+    return new Set();
+  }
+}
+
+function convertLakesheetToMarkdown(bodySheet: string, body?: string): string {
   try {
     const sheetData: LakesheetData = JSON.parse(bodySheet);
 
     if (!sheetData.data || sheetData.data.length === 0) {
       return '';
+    }
+
+    // Filter out hidden sheets
+    const hiddenIds = getHiddenSheetIds(body);
+    if (hiddenIds.size > 0) {
+      sheetData.data = sheetData.data.filter(sheet => !hiddenIds.has(sheet.id));
     }
 
     // Convert each sheet to markdown
@@ -118,7 +145,7 @@ export async function buildDoc(doc: TreeNode, mapping: Record<string, TreeNode>)
 
   // Check if it's a lakesheet (table) document
   if (docDetail.format === 'lakesheet' && docDetail.body_sheet) {
-    bodyContent = convertLakesheetToMarkdown(docDetail.body_sheet);
+    bodyContent = convertLakesheetToMarkdown(docDetail.body_sheet, docDetail.body);
   } else {
     // Handle regular documents
     bodyContent = docDetail.body || docDetail.body_lake || '';
