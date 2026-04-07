@@ -3,7 +3,9 @@ import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import path from 'path';
 import yaml from 'yaml';
-import { request } from 'undici';
+import { request, Agent } from 'undici';
+
+const insecureAgent = new Agent({ connect: { rejectUnauthorized: false } });
 import consola from 'consola';
 
 export const logger = consola;
@@ -38,7 +40,7 @@ export async function writeFile(filePath: string, content) {
 }
 
 export async function getRedirectLink(url: string, host: string): Promise<string> {
-  const { headers } = await request(url, { method: 'HEAD' });
+  const { headers } = await request(url, { method: 'HEAD', dispatcher: insecureAgent });
   const redirectLink = headers.location;
   if (!redirectLink) return url;
   const link = Array.isArray(redirectLink) ? redirectLink[0] : redirectLink;
@@ -54,6 +56,7 @@ export async function download(url: string, filePath: string, opts: any = {}) {
       ...headers,
     },
     maxRedirections: 10,
+    dispatcher: insecureAgent,
     ...otherOpts,
   });
 

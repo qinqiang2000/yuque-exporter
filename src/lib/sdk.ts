@@ -1,5 +1,5 @@
 import assert from 'assert/strict';
-import { request, Dispatcher } from 'undici';
+import { request, Agent, Dispatcher } from 'undici';
 import { YuqueAPIError } from './errors.js';
 import { config } from '../config.js';
 
@@ -88,6 +88,7 @@ export interface SDKOptions {
   timeout?: number;
   maxRetries?: number;
   retryDelay?: number;
+  rejectUnauthorized?: boolean;
 }
 
 export interface ResponseData<T> {
@@ -106,6 +107,7 @@ export class SDK {
   private timeout: number;
   private maxRetries: number;
   private retryDelay: number;
+  private dispatcher: Dispatcher | undefined;
 
   constructor(opts: SDKOptions) {
     this.token = opts.token;
@@ -115,6 +117,11 @@ export class SDK {
     this.maxRetries = opts.maxRetries || 3;
     this.retryDelay = opts.retryDelay || 1000;
     assert(this.token, 'Missing yuque token, see https://www.yuque.com/yuque/developer/api for more detail.');
+
+    const rejectUnauthorized = opts.rejectUnauthorized ?? false;
+    if (!rejectUnauthorized) {
+      this.dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+    }
   }
 
   async getUser(user = '') {
@@ -176,7 +183,7 @@ export class SDK {
     };
 
     try {
-      const { statusCode, body } = await request(this.host, opts);
+      const { statusCode, body } = await request(this.host, { ...opts, dispatcher: this.dispatcher });
       const json: ResponseData<T> = await body.json();
 
       if (statusCode !== 200) {
