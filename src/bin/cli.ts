@@ -42,6 +42,10 @@ const options = {
     description: 'Skip draft and uncategorized documents',
     default: true,
   },
+  cookie: {
+    type: 'string' as const,
+    description: 'yuque cookie for downloading attachments (can also use YUQUE_COOKIE env var)',
+  },
   timeout: {
     type: 'string' as const,
     description: 'Request timeout in milliseconds',
@@ -89,6 +93,7 @@ const {
   concurrency,
   'max-retries': maxRetries,
   'retry-delay': retryDelay,
+  cookie,
   ...restValues
 } = argv.values;
 
@@ -100,6 +105,7 @@ Object.assign(config, restValues, {
   concurrency: concurrency ? parseInt(concurrency, 10) : config.concurrency,
   maxRetries: maxRetries ? parseInt(maxRetries, 10) : config.maxRetries,
   retryDelay: retryDelay ? parseInt(retryDelay, 10) : config.retryDelay,
+  cookie: cookie || config.cookie,
 });
 
 // validate token

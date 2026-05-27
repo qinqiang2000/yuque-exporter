@@ -3,6 +3,7 @@ import path from 'path';
 export const config = {
   host: 'https://www.yuque.com',
   token: process.env.YUQUE_TOKEN,
+  cookie: process.env.YUQUE_COOKIE,
   userAgent: 'yuque-exporter',
   outputDir: './storage',
   repoDir: undefined as string | undefined,

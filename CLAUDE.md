@@ -80,14 +80,22 @@ The tool operates in two distinct phases:
   - `replaceHTML`: Converts `<br/>` to newlines
   - `relativeLink`: Transforms Yuque URLs to relative paths
   - `downloadAsset`: Downloads images to `assets/` folder
-- Adds YAML frontmatter with title and URL
+- Adds a markdown link frontmatter (title + URL) at the top of each file
 - Skips processing if `published_at` unchanged and markdown file exists
+
+**`src/lib/errors.ts`** - Custom error classes
+- `YuqueExporterError` (base) and `YuqueAPIError` (with `statusCode`) for structured error handling
+
+**`src/lib/utils.ts`** - Shared utilities
+- `logger` (re-exports `consola`), file helpers (`readJSON`, `exists`, `mkdir`, `rm`, `writeFile`)
+- `download()` and `getRedirectLink()` use `undici` for HTTP requests
 
 **`src/config.ts`** - Global configuration
 - Reads `YUQUE_TOKEN` from environment variable
 - Default output: `./storage`, metadata: `./storage/.meta`
 - Configurable via CLI flags: `--token`, `--host`, `-o`/`--output`, `--repo`, `--clean`
-- `--repo` allows customizing the output folder name instead of using the repo name
+- Network settings: `timeout` (60s), `concurrency` (10), `maxRetries` (3), `retryDelay` (1s)
+- `skipDraft` (default: `true`) controls whether draft documents are excluded
 
 ### CLI Usage Patterns
 
@@ -122,12 +130,14 @@ CLI Options:
 - `--token` - Yuque API token (can also use `YUQUE_TOKEN` env var)
 - `--host` - Yuque host (default: `https://www.yuque.com`)
 
-### Incremental Updates
+### Incremental Updates and File Tracking
 
-The tool tracks document freshness using:
-- `docs-published-at.json` maps `doc.id -> published_at` timestamp
+The tool tracks document freshness and file state using several JSON files in `.meta/`:
+- `docs-published-at.json` maps `doc.id -> published_at` timestamp; updated **after** build succeeds (not after crawl), so a failed build retries all changed docs
 - During crawl: only fetches documents where `published_at` changed
 - During build: skips markdown generation if timestamp unchanged AND file exists
+- `manifest.json` tracks all generated `files` and `directories`; used to delete files removed from Yuque on subsequent builds
+- `docs-filepath.json` maps `namespace/slug -> filepath`; used to detect and clean up renamed documents
 
 ### ESM Module Setup
 

@@ -242,13 +242,16 @@ function downloadAsset(opts: Options) {
     // Place all assets in the root 'assets' directory for centralized access
     const assetsDir = 'assets';
 
-    // FIXME: 语雀附件现在不允许直接访问，需要登录后才能下载，这里先跳过。
-    // const assetNodes = selectAll(`image[url^=http], link[url^=${host}/attachments/]`, tree) as Link[];
-    const assetNodes = selectAll('image[url^=http]', tree) as Link[];
+    const assetSelector = config.cookie
+      ? `image[url^=http], link[url^=${config.host}/attachments/]`
+      : 'image[url^=http]';
+    const assetNodes = selectAll(assetSelector, tree) as Link[];
     for (const node of assetNodes) {
       const assetName = `${opts.doc.url}/${new URL(node.url).pathname.split('/').pop()}`;
       const filePath = path.join(assetsDir, assetName);
-      await download(node.url, path.join(config.outputDir, filePath), { headers: { 'User-Agent': config.userAgent } });
+      const headers: Record<string, string> = { 'User-Agent': config.userAgent };
+      if (config.cookie) headers['Cookie'] = config.cookie;
+      await download(node.url, path.join(config.outputDir, filePath), { headers });
       node.url = path.relative(path.dirname(docFilePath), filePath);
     }
   };
