@@ -51,6 +51,7 @@ export async function feishuCrawl(input: string): Promise<FeishuCrawlResult> {
   let spaceId: string;
   let spaceName: string;
   let allNodes: WikiNode[];
+  let rootNodeTitle: string | undefined;
 
   // input can be a space_id (numeric) or a node_token (wiki/...)
   if (/^\d+$/.test(input)) {
@@ -61,6 +62,7 @@ export async function feishuCrawl(input: string): Promise<FeishuCrawlResult> {
     logger.info(`[Feishu] Fetching root node: ${input}`);
     const rootNode = await sdk.getNodeInfo(input);
     spaceId = rootNode.space_id;
+    rootNodeTitle = rootNode.title;
     logger.info(`[Feishu] Collecting nodes from space: ${spaceId}, root: ${rootNode.title}`);
     allNodes = [rootNode];
     if (rootNode.has_child) {
@@ -76,10 +78,7 @@ export async function feishuCrawl(input: string): Promise<FeishuCrawlResult> {
     }
   }
 
-  // get space name
-  const spaces = await sdk.getSpaces();
-  const space = spaces.find(s => s.space_id === spaceId);
-  spaceName = space?.name || spaceId;
+  spaceName = rootNodeTitle || spaceId;
 
   logger.info(`[Feishu] Found ${allNodes.length} nodes total`);
 

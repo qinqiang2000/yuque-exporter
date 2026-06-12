@@ -1,7 +1,6 @@
 import path from 'path';
-import http from 'http';
 import { request } from 'undici';
-import { writeFile, readJSON, exists, logger } from './utils.js';
+import { logger } from './utils.js';
 import { config } from '../config.js';
 
 const API_BASE = 'https://open.feishu.cn/open-apis';
@@ -98,12 +97,6 @@ export interface Block {
   file?: { token: string; name: string };
 }
 
-interface UserTokenData {
-  access_token: string;
-  refresh_token: string;
-  expires_at: number;
-  refresh_expires_at: number;
-}
 
 function contentTypeToExt(contentType: string | undefined): string {
   if (!contentType) return 'png';
@@ -130,142 +123,42 @@ function contentTypeToExt(contentType: string | undefined): string {
   return map[mime] || '';
 }
 
-function getTokenCachePath() {
-  return path.join(config.metaDir, 'feishu', 'user-token.json');
-}
+
 
 export class FeishuSDK {
   private appId: string;
   private appSecret: string;
-  private userToken: string = '';
-  private refreshToken: string = '';
-  private tokenExpireAt: number = 0;
-  private refreshExpireAt: number = 0;
+  private tenantToken: string = '';
+  private tenantTokenExpireAt: number = 0;
 
   constructor(opts: FeishuSDKOptions) {
     this.appId = opts.appId;
     this.appSecret = opts.appSecret;
   }
 
-  private async getAppAccessToken(): Promise<string> {
-    const { body } = await request(`${API_BASE}/auth/v3/app_access_token/internal`, {
+  private async getTenantAccessToken(): Promise<string> {
+    if (this.tenantToken && Date.now() < this.tenantTokenExpireAt) {
+      return this.tenantToken;
+    }
+    const { body } = await request(`${API_BASE}/auth/v3/tenant_access_token/internal`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ app_id: this.appId, app_secret: this.appSecret }),
     });
     const json: any = await body.json();
     if (json.code !== 0) throw new Error(`Feishu app auth failed: ${json.msg}`);
-    return json.app_access_token;
-  }
-
-  private async loadCachedToken(): Promise<boolean> {
-    const p = getTokenCachePath();
-    if (!await exists(p)) return false;
-    const data: UserTokenData = await readJSON(p);
-    if (Date.now() < data.expires_at) {
-      this.userToken = data.access_token;
-      this.refreshToken = data.refresh_token;
-      this.tokenExpireAt = data.expires_at;
-      this.refreshExpireAt = data.refresh_expires_at;
-      return true;
-    }
-    if (Date.now() < data.refresh_expires_at) {
-      this.refreshToken = data.refresh_token;
-      this.refreshExpireAt = data.refresh_expires_at;
-      return false; // need refresh
-    }
-    return false; // need re-auth
-  }
-
-  private async saveToken(data: any): Promise<void> {
-    const tokenData: UserTokenData = {
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      expires_at: Date.now() + (data.expires_in - 60) * 1000,
-      refresh_expires_at: Date.now() + (data.refresh_expires_in - 60) * 1000,
-    };
-    this.userToken = tokenData.access_token;
-    this.refreshToken = tokenData.refresh_token;
-    this.tokenExpireAt = tokenData.expires_at;
-    this.refreshExpireAt = tokenData.refresh_expires_at;
-    await writeFile(getTokenCachePath(), tokenData);
-  }
-
-  private async refreshUserToken(): Promise<void> {
-    const appToken = await this.getAppAccessToken();
-    const { body } = await request(`${API_BASE}/authen/v1/oidc/refresh_access_token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${appToken}`,
-      },
-      body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: this.refreshToken }),
-    });
-    const json: any = await body.json();
-    if (json.code !== 0) throw new Error(`Feishu token refresh failed: ${json.msg}`);
-    await this.saveToken(json.data);
-    logger.info('[Feishu] Token refreshed successfully');
+    this.tenantToken = json.tenant_access_token;
+    this.tenantTokenExpireAt = Date.now() + (json.expire - 60) * 1000;
+    return this.tenantToken;
   }
 
   async authorize(): Promise<void> {
-    const loaded = await this.loadCachedToken();
-    if (loaded && Date.now() < this.tokenExpireAt) {
-      logger.info('[Feishu] Using cached user token');
-      return;
-    }
-    if (this.refreshToken && Date.now() < this.refreshExpireAt) {
-      logger.info('[Feishu] Refreshing user token...');
-      await this.refreshUserToken();
-      return;
-    }
-
-    // need full OAuth flow
-    const redirectUri = 'http://localhost:9999/callback';
-    const authUrl = `https://open.feishu.cn/open-apis/authen/v1/authorize?app_id=${this.appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=wiki%3Awiki%3Areadonly%20docx%3Adocument%3Areadonly%20drive%3Afile%3Areadonly%20docs%3Adocument.media%3Adownload&state=feishu-exporter`;
-
-    logger.info('[Feishu] Authorization required. Please open the following URL in your browser:');
-    console.log(`\n${authUrl}\n`);
-
-    const code = await new Promise<string>((resolve, reject) => {
-      const server = http.createServer((req, res) => {
-        const url = new URL(req.url!, 'http://localhost:9999');
-        const code = url.searchParams.get('code');
-        if (code) {
-          res.end('授权成功，可以关闭此页面');
-          server.close();
-          resolve(code);
-        } else {
-          res.end('等待授权...');
-        }
-      });
-      server.listen(9999, () => logger.info('[Feishu] Waiting for OAuth callback on port 9999...'));
-      setTimeout(() => {
-        server.close();
-        reject(new Error('OAuth timeout after 5 minutes'));
-      }, 300000);
-    });
-
-    const appToken = await this.getAppAccessToken();
-    const { body } = await request(`${API_BASE}/authen/v1/access_token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${appToken}`,
-      },
-      body: JSON.stringify({ grant_type: 'authorization_code', code }),
-    });
-    const json: any = await body.json();
-    if (json.code !== 0) throw new Error(`Feishu OAuth failed: ${json.msg}`);
-    await this.saveToken(json.data);
-    logger.info(`[Feishu] Authorized as: ${json.data.name}`);
+    await this.getTenantAccessToken();
+    logger.info('[Feishu] Token refreshed successfully');
   }
 
   private async getToken(): Promise<string> {
-    if (!this.userToken) await this.authorize();
-    if (Date.now() >= this.tokenExpireAt && this.refreshToken) {
-      await this.refreshUserToken();
-    }
-    return this.userToken;
+    return this.getTenantAccessToken();
   }
 
   private async get<T>(path: string, params: Record<string, string> = {}, retryCount = 0): Promise<T> {
