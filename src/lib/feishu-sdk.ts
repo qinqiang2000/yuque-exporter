@@ -292,19 +292,27 @@ export class FeishuSDK {
     return finalPath;
   }
 
-  private async downloadDriveResource(url: string, destPath: string): Promise<string> {
+  private async downloadDriveResource(url: string, destPath: string, retryCount = 0): Promise<string> {
     const token = await this.getToken();
     const { body, statusCode, headers } = await request(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (statusCode !== 200) {
       let errMsg = `status ${statusCode}`;
+      let isRateLimit = false;
       try {
         const json: any = await body.json();
         errMsg = json.msg || errMsg;
+        isRateLimit = (statusCode === 400) && (json.msg?.includes('frequency limit') || json.code === 99991400);
       } catch {
         const text = await body.text().catch(() => '');
         errMsg = `status ${statusCode}, body: ${text.slice(0, 200)}`;
+      }
+      if (isRateLimit && retryCount < 5) {
+        const delay = 2000 * Math.pow(2, retryCount);
+        logger.warn(`[Feishu] Rate limited on download, retrying in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        return this.downloadDriveResource(url, destPath, retryCount + 1);
       }
       throw new Error(`Feishu download failed [${statusCode}]: ${errMsg}`);
     }
